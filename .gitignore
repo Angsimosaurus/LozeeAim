@@ -1,0 +1,42 @@
+# Build outputs
+.vs/
+x64/
+Debug/
+Release/
+dist/
+[Bb]in/
+[Oo]bj/
+*.tlog
+*.lastbuildstate
+*.ipch
+*.suo
+*.user
+*.aps
+*.pdb
+*.ilk
+*.obj
+*.iobj
+*.ipdb
+*.exp
+*.lib
+*.dll
+*.exe
+
+# Runtime generated files
+global.ini
+lozeeaim.log
+obs-studio.log
+*.log
+engine_cache/
+_dep_extract/
+models/
+*.onnx
+*.engine
+*.plan
+*.cache
+
+# Local tooling
+.serena/
+*.tmp
+.DS_Store
+Thumbs.db

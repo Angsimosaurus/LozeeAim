@@ -1,0 +1,53 @@
+#include "resource.h"
+#define APSTUDIO_READONLY_SYMBOLS
+#include "winres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     32,0,4,0
+PRODUCTVERSION  32,0,4,0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          0x40004L
+FILETYPE        0x1L
+FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "OBS"
+            VALUE "FileDescription",  "OBS Studio"
+            VALUE "FileVersion",      "32.0.4"
+            VALUE "InternalName",     "obs"
+            VALUE "LegalCopyright",   "(C) Lain Bailey"
+            VALUE "Comments",         "Free and open source software for video recording and live streaming"
+            VALUE "OriginalFilename", "obs"
+            VALUE "ProductName",      "OBS Studio"
+            VALUE "ProductVersion",   "32.0.4"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+1 TEXTINCLUDE
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+    "#include ""winres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+    "\r\n"
+    "\0"
+END

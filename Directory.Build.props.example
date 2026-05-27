@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <OPENCV_ROOT>C:\path\to\opencv</OPENCV_ROOT>
+    <ONNXRUNTIME_ROOT>C:\path\to\onnxruntime</ONNXRUNTIME_ROOT>
+    <TENSORRT_ROOT>C:\path\to\TensorRT</TENSORRT_ROOT>
+  </PropertyGroup>
+</Project>
