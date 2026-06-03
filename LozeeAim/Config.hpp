@@ -109,7 +109,6 @@ public:
     char yolo_model_paths[512] = "";
     int  yolo_model_idx = 0;
     int  inference_provider = 0;       // 0=DirectML, 1=TensorRT, 2=CPU
-    bool use_end_to_end_onnx = false;
     bool use_cpu_inference = false;     // skip GPU providers, run YOLO on CPU
     const char* trt_cache_path = ".\\engine_cache";
 

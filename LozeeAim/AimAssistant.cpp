@@ -1200,7 +1200,14 @@ void AimAssistant::DrawModelTab() {
 
     DrawSectionHeader(UiText(cfg, "识别参数", "Detection"));
     ImGui::SliderFloat(UiText(cfg, "置信度阈值", "Confidence threshold"), &cfg.confidence_threshold, 0.1f, 0.9f, "%.2f");
-    ImGui::SliderFloat(UiText(cfg, "NMS 阈值", "NMS threshold"), &cfg.nms_threshold, 0.1f, 0.8f, "%.2f");
+    if (detector && detector->IsEndToEndModel()) {
+        ImGui::BeginDisabled();
+        ImGui::SliderFloat(UiText(cfg, "NMS 阈值", "NMS threshold"), &cfg.nms_threshold, 0.1f, 0.8f, "%.2f");
+        ImGui::EndDisabled();
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "%s", UiText(cfg, "已检测到 end-to-end 模型，NMS 已自动禁用", "End-to-end model detected | NMS auto-disabled"));
+    } else {
+        ImGui::SliderFloat(UiText(cfg, "NMS 阈值", "NMS threshold"), &cfg.nms_threshold, 0.1f, 0.8f, "%.2f");
+    }
 
     DrawSectionHeader(UiText(cfg, "YOLO模型", "YOLO Model"));
     static std::string yolo_current;

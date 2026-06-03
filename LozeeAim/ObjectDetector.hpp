@@ -17,6 +17,7 @@ public:
 
     void Detect(const cv::Mat& image, std::vector<Detection>& detections, const Config& cfg, TimingDetails& timings);
     bool Reload(const wchar_t* path);
+    bool IsEndToEndModel() const { return is_end_to_end_model; }
 
 private:
     Ort::Env env;
@@ -29,4 +30,5 @@ private:
     std::vector<int64_t> cached_input_shape;
     cv::Mat canvas;
     cv::Mat preallocated_blob;
+    bool is_end_to_end_model = false;
 };

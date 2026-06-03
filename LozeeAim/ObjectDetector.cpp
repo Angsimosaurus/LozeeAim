@@ -117,6 +117,14 @@ ObjectDetector::ObjectDetector(const Config& cfg)
     const std::wstring model_path = ResolveModelPath(cfg);
     session = Ort::Session(env, model_path.c_str(), session_options);
 
+    auto output_shape = session.GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+    is_end_to_end_model = (output_shape.size() == 3 && output_shape.back() == 6);
+    std::cout << "[Auto-detect] Output shape: [";
+    for (size_t i = 0; i < output_shape.size(); ++i) {
+        std::cout << output_shape[i] << (i + 1 < output_shape.size() ? "," : "");
+    }
+    std::cout << "] => " << (is_end_to_end_model ? "end-to-end (NMS-free)" : "standard (NMS required)") << std::endl;
+
     pAllocator = std::make_unique<Ort::AllocatorWithDefaultOptions>();
     pInputName = std::make_unique<Ort::AllocatedStringPtr>(session.GetInputNameAllocated(0, *pAllocator));
     pOutputName = std::make_unique<Ort::AllocatedStringPtr>(session.GetOutputNameAllocated(0, *pAllocator));
@@ -157,6 +165,14 @@ bool ObjectDetector::Reload(const wchar_t* path) {
         }
 
         session = Ort::Session(env, path, session_options);
+
+        auto output_shape = session.GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+        is_end_to_end_model = (output_shape.size() == 3 && output_shape.back() == 6);
+        std::cout << "[Auto-detect] Output shape: [";
+        for (size_t i = 0; i < output_shape.size(); ++i) {
+            std::cout << output_shape[i] << (i + 1 < output_shape.size() ? "," : "");
+        }
+        std::cout << "] => " << (is_end_to_end_model ? "end-to-end (NMS-free)" : "standard (NMS required)") << std::endl;
 
         pInputName = std::make_unique<Ort::AllocatedStringPtr>(session.GetInputNameAllocated(0, *pAllocator));
         pOutputName = std::make_unique<Ort::AllocatedStringPtr>(session.GetOutputNameAllocated(0, *pAllocator));
@@ -230,7 +246,7 @@ void ObjectDetector::Detect(const cv::Mat& image, std::vector<Detection>& detect
     const float* output_data = output_tensors.front().GetTensorData<float>();
     const auto& output_shape = output_tensors.front().GetTensorTypeAndShapeInfo().GetShape();
 
-    if (cfg.use_end_to_end_onnx) {
+    if (is_end_to_end_model) {
         const int num_detections = static_cast<int>(output_shape[1]);
         for (int i = 0; i < num_detections; ++i) {
             const float confidence = output_data[i * 6 + 4];
