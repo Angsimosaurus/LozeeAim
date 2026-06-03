@@ -370,36 +370,31 @@ void AimAssistant::UpdateClickability() {
     HWND hwnd = overlay.GetHwnd();
     bool clickable = cfg.show_menu || nn_collecting || nn_test_mode;
     overlay.SetMenuOpen(cfg.show_menu);
+    overlay.SetPassthrough(cfg.show_menu);
+    if (!cfg.show_menu) overlay.SetMenuRect(0.0f, 0.0f, 0.0f, 0.0f);
     LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
 
     if (clickable) {
         SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+        // WS_EX_TRANSPARENT 제거: SetWindowRgn으로 영역 제한
         exStyle &= ~WS_EX_TRANSPARENT;
         exStyle &= ~WS_EX_NOACTIVATE;
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
-
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
-        ImGuiIO& io = ImGui::GetIO();
-        io.MouseDrawCursor = false;
-        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-
-        if (cfg.show_menu)
-            std::cout << "[INFO] Menu ON" << std::endl;
-    }
-    else {
+        // 메뉴가 아닌 경우(수집/테스트)는 전체 화면
+        if (!cfg.show_menu) {
+            SetWindowRgn(hwnd, NULL, TRUE);
+        }
+    } else {
         SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
         exStyle |= WS_EX_TRANSPARENT;
-        exStyle |= WS_EX_NOACTIVATE;    // passthrough mode for ESP
+        exStyle |= WS_EX_NOACTIVATE;
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
-
+        SetWindowRgn(hwnd, NULL, TRUE); // 전체 화면
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
-
-        ImGui::GetIO().MouseDrawCursor = false;
-
-        std::cout << "[INFO] Menu OFF - ESP overlay mode" << std::endl;
     }
 }
 
@@ -831,14 +826,36 @@ void AimAssistant::handleVisualization(const Detection* best_target) {
 void AimAssistant::DrawUI() {
     ImGui::SetNextWindowSize(ImVec2(600, 720), ImGuiCond_FirstUseEver);
 
+    static float last_menu_x = -1.0f, last_menu_y = -1.0f, last_menu_w = -1.0f, last_menu_h = -1.0f;
+
     bool was_open = cfg.show_menu;
     if (!ImGui::Begin("LozeeAim", &cfg.show_menu)) {
         ImGui::End();
         if (was_open && !cfg.show_menu) {
             overlay.menu_open = false;
+            overlay.SetMenuRect(0.0f, 0.0f, 0.0f, 0.0f);
+            SetWindowRgn(overlay.GetHwnd(), NULL, TRUE);
+            last_menu_x = -1.0f; last_menu_y = -1.0f;
+            last_menu_w = -1.0f; last_menu_h = -1.0f;
             UpdateClickability();
         }
         return;
+    }
+
+    ImVec2 winPos = ImGui::GetWindowPos();
+    ImVec2 winSize = ImGui::GetWindowSize();
+    overlay.SetMenuRect(winPos.x, winPos.y, winSize.x, winSize.y);
+
+    if (winPos.x != last_menu_x || winPos.y != last_menu_y ||
+        winSize.x != last_menu_w || winSize.y != last_menu_h) {
+        last_menu_x = winPos.x; last_menu_y = winPos.y;
+        last_menu_w = winSize.x; last_menu_h = winSize.y;
+        HRGN rgn = CreateRectRgn(
+            (int)roundf(winPos.x), (int)roundf(winPos.y),
+            (int)roundf(winPos.x + winSize.x), (int)roundf(winPos.y + winSize.y)
+        );
+        SetWindowRgn(overlay.GetHwnd(), rgn, TRUE);
+        DeleteObject(rgn);
     }
 
     DrawTopBar();

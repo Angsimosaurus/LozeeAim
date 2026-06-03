@@ -3,11 +3,15 @@
 
 #include "Overlay.hpp"
 #include <dwmapi.h>
+#include <dxgi1_2.h>
+#include <dcomp.h>
 #include <iostream>
-#include <io.h> 
+#include <io.h>
 
 #pragma comment(lib, "d3d11.lib")
-#pragma comment(lib, "dwmapi.lib") 
+#pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "dcomp.lib")
+#pragma comment(lib, "dxgi.lib") 
 
 #ifndef WDA_EXCLUDEFROMCAPTURE
 #define WDA_EXCLUDEFROMCAPTURE 0x00000011
@@ -20,6 +24,28 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return true;
 
     switch (msg) {
+    case WM_NCCREATE:
+    {
+        auto cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        SetWindowLongPtrW(hWnd, GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        return TRUE;
+    }
+
+    case WM_NCHITTEST:
+    {
+        Overlay* ov = reinterpret_cast<Overlay*>(
+            GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+        if (ov && ov->GetPassthrough()) {
+            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
+            ::ScreenToClient(hWnd, &pt);
+            if (ov->HasMenuRect() && ov->IsPointInMenu((float)pt.x, (float)pt.y))
+                return HTCLIENT;
+            return HTTRANSPARENT;
+        }
+        return HTCLIENT;
+    }
+
     case WM_SETCURSOR:
         if (LOWORD(lParam) == HTCLIENT) {
             SetCursor(LoadCursor(nullptr, IDC_ARROW));
@@ -87,7 +113,7 @@ bool Overlay::Init() {
         wc.lpszClassName, L"",
         WS_POPUP,
         0, 0, width, height,
-        nullptr, nullptr, wc.hInstance, nullptr
+        nullptr, nullptr, wc.hInstance, this
     );
 
     if (!hwnd) return false;
@@ -146,10 +172,37 @@ void Overlay::Render() {
     g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color);
 
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-    HRESULT hr = g_pSwapChain->Present(0, DXGI_PRESENT_DO_NOT_WAIT);
-    if (hr == DXGI_ERROR_WAS_STILL_DRAWING) return;
-    if (FAILED(hr)) {
-        g_pSwapChain->Present(0, 0);
+    g_pSwapChain->Present(0, 0);
+}
+
+void Overlay::SetSize(int w, int h) {
+    if (width == w && height == h) return;
+    width = w;
+    height = h;
+    if (hwnd) {
+        SetWindowPos(hwnd, nullptr, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    if (g_pSwapChain) {
+        CleanupRenderTarget();
+        g_pSwapChain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, 0);
+        CreateRenderTarget();
+        if (g_dcompDevice) g_dcompDevice->Commit();
+    }
+}
+
+void Overlay::InitializeBlendState() {
+    D3D11_BLEND_DESC bd = {};
+    bd.RenderTarget[0].BlendEnable = TRUE;
+    bd.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    bd.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    bd.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+    bd.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    g_pd3dDevice->CreateBlendState(&bd, &g_pBlendState);
+    if (g_pBlendState) {
+        g_pd3dDeviceContext->OMSetBlendState(g_pBlendState, nullptr, 0xffffffff);
     }
 }
 
@@ -207,36 +260,75 @@ void Overlay::Cleanup() {
 }
 
 bool Overlay::CreateDeviceD3D(HWND hWnd) {
-    DXGI_SWAP_CHAIN_DESC sd;
-    ZeroMemory(&sd, sizeof(sd));
-    sd.BufferCount = 2;
-    sd.BufferDesc.Width = 0;
-    sd.BufferDesc.Height = 0;
-    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    sd.BufferDesc.RefreshRate.Numerator = 60;
-    sd.BufferDesc.RefreshRate.Denominator = 1;
-    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    sd.OutputWindow = hWnd;
-    sd.SampleDesc.Count = 1;
-    sd.SampleDesc.Quality = 0;
-    sd.Windowed = TRUE;
-    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-    UINT createDeviceFlags = 0;
+    // 1. D3D11 device (BGRA support required for DComposition)
+    UINT createDeviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     D3D_FEATURE_LEVEL featureLevel;
-    const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
-    if (D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext) != S_OK)
+    const D3D_FEATURE_LEVEL featureLevelArray[] = {
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_0,
+    };
+    if (D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+        createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION,
+        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext) != S_OK)
         return false;
+
+    // 2. DXGI factory2
+    IDXGIDevice* dxgiDev = nullptr;
+    g_pd3dDevice->QueryInterface(IID_PPV_ARGS(&dxgiDev));
+
+    IDXGIAdapter* adapter = nullptr;
+    dxgiDev->GetAdapter(&adapter);
+
+    IDXGIFactory2* factory2 = nullptr;
+    {
+        IDXGIFactory* baseFactory = nullptr;
+        adapter->GetParent(IID_PPV_ARGS(&baseFactory));
+        baseFactory->QueryInterface(IID_PPV_ARGS(&factory2));
+        baseFactory->Release();
+    }
+
+    // 3. Composition swap chain
+    DXGI_SWAP_CHAIN_DESC1 scd = {};
+    scd.Width = width;
+    scd.Height = height;
+    scd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    scd.SampleDesc.Count = 1;
+    scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    scd.BufferCount = 2;
+    scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    scd.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+    scd.Scaling = DXGI_SCALING_STRETCH;
+
+    factory2->CreateSwapChainForComposition(g_pd3dDevice, &scd, nullptr, &g_pSwapChain);
+    factory2->Release();
+    adapter->Release();
+
+    // 4. DComposition setup
+    DCompositionCreateDevice(dxgiDev, IID_PPV_ARGS(&g_dcompDevice));
+    dxgiDev->Release();
+
+    g_dcompDevice->CreateTargetForHwnd(hWnd, TRUE, &g_dcompTarget);
+    g_dcompDevice->CreateVisual(&g_dcompVisual);
+    g_dcompVisual->SetContent(g_pSwapChain);
+    g_dcompTarget->SetRoot(g_dcompVisual);
+    g_dcompDevice->Commit();
+
+    // 5. Alpha blend state
+    InitializeBlendState();
+
     CreateRenderTarget();
     return true;
 }
 
 void Overlay::CleanupDeviceD3D() {
     CleanupRenderTarget();
+    if (g_dcompVisual) { g_dcompVisual->Release(); g_dcompVisual = nullptr; }
+    if (g_dcompTarget) { g_dcompTarget->Release(); g_dcompTarget = nullptr; }
+    if (g_dcompDevice) { g_dcompDevice->Release(); g_dcompDevice = nullptr; }
     if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
     if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = nullptr; }
     if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+    if (g_pBlendState) { g_pBlendState->Release(); g_pBlendState = nullptr; }
 }
 
 void Overlay::CreateRenderTarget() {
